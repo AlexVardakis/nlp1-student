@@ -243,13 +243,19 @@ def evaluate(model, dataloader, criterion, device="cpu"):
 
 def train_neural_network_model(training_set, validation_set, num_classes, encoder, save_to,   
                                 hidden_dim=128, dropout=0.1, batch_size=64, learning_rate=1e-3, 
-                                weight_decay=1e-4, num_epochs=20, device=torch.device("cpu"), hidden_layers=1):
+                                weight_decay=1e-4, num_epochs=20, device=torch.device("cpu"), hidden_layers=1,
+                                patience=None, min_delta=0.0):
     """Encode texts, train the MLP, and checkpoint the best validation model.
 
     Inputs: train/val (text, label) pairs, num_classes, encoder (text -> sparse vector), path prefix to save weights,
             plus standard training hyperparameters.
     Process: vectorise documents, build sparse dataloaders, train for `num_epochs`, save best-by-val-loss.
     Output: per-epoch metrics list, best epoch index, and validation predictions from the best model.
+
+    Early stopping (optional, off by default so the tutorial's behaviour is unchanged): if `patience` is an
+    integer, training stops once the validation loss has not improved by more than `min_delta` for `patience`
+    consecutive epochs; `num_epochs` is then only the maximum. The metrics list has one entry per epoch
+    actually run, and a history file is written to {save_to}_history.json.
     """
     if isinstance(device, str):
         device = torch.device(device)
@@ -315,6 +321,8 @@ def train_neural_network_model(training_set, validation_set, num_classes, encode
     metrics = []
     print("Training...")
     predictions = None
+    stop_reference_loss = float("inf")  # best validation loss that counts as a real improvement (> min_delta)
+    epochs_without_improvement = 0
     for epoch in tqdm(range(num_epochs)):
         # Train the model for one epoch
         train_metrics = train_one_epoch(model, train_loader, optimizer, criterion, device)
@@ -343,7 +351,21 @@ def train_neural_network_model(training_set, validation_set, num_classes, encode
             torch.save(model.state_dict(), f"{save_to}.pt")
             best_epoch = epoch
             predictions = preds
-    
+
+        # Optional early stopping: no improvement larger than min_delta for `patience` epochs in a row
+        if val_metrics["loss"] < stop_reference_loss - min_delta:
+            stop_reference_loss = val_metrics["loss"]
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if patience is not None and epochs_without_improvement >= patience:
+                print(f"Early stopping after epoch {epoch + 1} (best epoch: {best_epoch + 1})")
+                break
+
+    with open(f"{save_to}_history.json", "w", encoding="utf-8") as f:
+        json.dump({"epochs_run": len(metrics), "best_epoch": best_epoch, "num_epochs": num_epochs,
+                   "patience": patience, "min_delta": min_delta, "metrics": metrics}, f, indent=2)
+
     time_training = time.time()
     print(f"Training done! Time taken: {time_training - time_dataloader:.3f} seconds")
 
