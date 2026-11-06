@@ -58,6 +58,62 @@ class SparseMLP(nn.Module):
         # logprobs
         return self.output(x)
 
+class TwoLayerSparseMLP(nn.Module):
+    """Two-hidden-layer MLP that accepts sparse input tensors.
+    Inputs: feature vectors of size `input_dim` (e.g. bag-of-words).
+    Process: sparse matmul into a dense hidden layer, ReLU + dropout, linear (num_classes) and log-softmax outputs
+        log-softmax, rather than softmax, for numerical stability
+    Output: logprobs over `num_classes`.
+    """
+
+    def __init__(self, input_dim, hidden_dim, num_classes, dropout=0.2):
+        """
+        input_dim: size of the input feature space (e.g. vocabulary size)
+        hidden_dim: width of the hidden layer
+        num_classes: number of output labels
+        dropout: fraction of hidden units zeroed during training (regularisation)
+        """
+        super().__init__()
+
+        # First-layer weights stay dense; inputs arriving here are sparse.
+        self.weight = nn.Parameter(
+            torch.empty(input_dim, hidden_dim)
+        )
+        self.bias = nn.Parameter(
+            torch.zeros(hidden_dim)
+        )
+
+        self.activation = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+
+        self.hidden2 = nn.Linear(hidden_dim, hidden_dim)
+
+        # Everything after the first layer is dense.
+        self.output = nn.Sequential(
+            nn.Linear(hidden_dim, num_classes),            
+            nn.LogSoftmax(dim=-1) # for numerical stability, it is common to use log softmax, rather than softmax
+        )
+
+        nn.init.xavier_uniform_(self.weight) # why xavier?
+
+    def forward(self, x):
+        """Map a sparse batch [batch, input_dim] to class log-probabilities [batch, num_classes]."""
+        # First matmul keeps x sparse; result is dense from here on.
+        x = torch.sparse.mm(x, self.weight)
+        x = x + self.bias
+
+        x = self.activation(x)
+        x = self.dropout(x)
+        
+        x = self.hidden2(x)
+        x = self.activation(x)
+        x = self.dropout(x)
+        # logprobs
+
+        return self.output(x)
+
+
+
 def scipy_to_torch_sparse(x):
     """Convert a SciPy sparse matrix to a coalesced PyTorch sparse COO tensor.
 
@@ -187,8 +243,8 @@ def evaluate(model, dataloader, criterion, device="cpu"):
 
 def train_neural_network_model(training_set, validation_set, num_classes, encoder, save_to,   
                                 hidden_dim=128, dropout=0.1, batch_size=64, learning_rate=1e-3, 
-                                weight_decay=1e-4, num_epochs=20, device=torch.device("cpu")):
-    """Encode texts, train SparseMLP, and checkpoint the best validation model.
+                                weight_decay=1e-4, num_epochs=20, device=torch.device("cpu"), hidden_layers=1):
+    """Encode texts, train the MLP, and checkpoint the best validation model.
 
     Inputs: train/val (text, label) pairs, num_classes, encoder (text -> sparse vector), path prefix to save weights,
             plus standard training hyperparameters.
@@ -241,11 +297,18 @@ def train_neural_network_model(training_set, validation_set, num_classes, encode
             'hidden_dim': hidden_dim, 
             'num_classes': num_classes, 
             'dropout': dropout,
+            'hidden_layers': hidden_layers,
         }
         json.dump(args, f, indent=2, ensure_ascii=False)
         
     # Create the model based on the input dimension, chosen hidden dimension, number of classification classes and dropout rate
-    model = SparseMLP(input_dim=len(encoder), hidden_dim=hidden_dim, num_classes=num_classes, dropout=dropout).to(device)
+    if hidden_layers==1:
+        MLPToTrain = SparseMLP
+    elif hidden_layers == 2:
+        MLPToTrain = TwoLayerSparseMLP
+    else:
+        raise KeyError("Bro what dont u get we dont have more than 1 or 2 hidden layers ")
+    model = MLPToTrain(input_dim=len(encoder), hidden_dim=hidden_dim, num_classes=num_classes, dropout=dropout).to(device)
     criterion = nn.NLLLoss() # create the loss function
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay) # create the optimizer
 
@@ -287,7 +350,7 @@ def train_neural_network_model(training_set, validation_set, num_classes, encode
     return metrics, best_epoch, predictions
 
 
-def load(path, device="cpu"):
+def load(path, device="cpu", hidden_layers=1):
     """
     Reconstruct the model architecture (using {path}.json) and load trained weights (using {path}.pt) and return it.
     """
@@ -300,8 +363,14 @@ def load(path, device="cpu"):
         
     if isinstance(device, str):
         device = torch.device(device)
-        
-    model = SparseMLP(**args)
+    hidden_layers = args.pop("hidden_layers", 1)
+
+    if hidden_layers==1:
+        model = SparseMLP(**args)
+    elif hidden_layers==2:
+        model=TwoLayerSparseMLP(**args)
+    else:
+        raise TypeError("Only 1 or 2 hidden layers are supported rn broski")
     model.load_state_dict(state_dict)
     model = model.to(device)
     return model
