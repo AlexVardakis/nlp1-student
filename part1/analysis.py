@@ -59,7 +59,7 @@ def plot_box_and_points(df, metric='accuracy', tickfmt="{x:.4f}"):
     )
     
     ax.set(xlabel="model", ylabel=metric)
-    ax.tick_params(axis="x", rotation=30)
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right", rotation_mode="anchor")
     ax.yaxis.set_major_formatter(StrMethodFormatter(tickfmt))
     fig.tight_layout()
     plt.show()
