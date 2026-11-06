@@ -9,3 +9,5 @@ part1/results/*
 part1/results/sentiment/**/*.pickle
 part1/results/sentiment/**/*.pt
 part1/results/sentiment/**/*.npz
+
+.DS_Store

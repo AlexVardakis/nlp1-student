@@ -1,0 +1,99 @@
+{
+  "epochs_run": 9,
+  "best_epoch": 3,
+  "num_epochs": 50,
+  "patience": 5,
+  "min_delta": 0.001,
+  "metrics": [
+    {
+      "train_metrics": {
+        "loss": 0.6490911546854683,
+        "accuracy": 0.6860412588465592
+      },
+      "val_metrics": {
+        "loss": 0.5074900920743852,
+        "accuracy": 0.8436057016663321
+      }
+    },
+    {
+      "train_metrics": {
+        "loss": 0.35786061965709576,
+        "accuracy": 0.8783315765697937
+      },
+      "val_metrics": {
+        "loss": 0.3006202956802561,
+        "accuracy": 0.881148363782373
+      }
+    },
+    {
+      "train_metrics": {
+        "loss": 0.24772701351819001,
+        "accuracy": 0.9045826431762285
+      },
+      "val_metrics": {
+        "loss": 0.27917807712729165,
+        "accuracy": 0.8845613330656494
+      }
+    },
+    {
+      "train_metrics": {
+        "loss": 0.2149567177560993,
+        "accuracy": 0.9164784420017066
+      },
+      "val_metrics": {
+        "loss": 0.27354849034034445,
+        "accuracy": 0.8889781168440072
+      }
+    },
+    {
+      "train_metrics": {
+        "loss": 0.1935052066657705,
+        "accuracy": 0.9247603272599508
+      },
+      "val_metrics": {
+        "loss": 0.2785151407879487,
+        "accuracy": 0.8873720136518771
+      }
+    },
+    {
+      "train_metrics": {
+        "loss": 0.17853071379525734,
+        "accuracy": 0.9315364151985143
+      },
+      "val_metrics": {
+        "loss": 0.28791835047925385,
+        "accuracy": 0.8855651475607308
+      }
+    },
+    {
+      "train_metrics": {
+        "loss": 0.1662870843672315,
+        "accuracy": 0.9371078652813332
+      },
+      "val_metrics": {
+        "loss": 0.30223877850940156,
+        "accuracy": 0.8825537040754868
+      }
+    },
+    {
+      "train_metrics": {
+        "loss": 0.15517592403637753,
+        "accuracy": 0.9416252572403755
+      },
+      "val_metrics": {
+        "loss": 0.3121872141439736,
+        "accuracy": 0.8823529411764706
+      }
+    },
+    {
+      "train_metrics": {
+        "loss": 0.14675134640213763,
+        "accuracy": 0.9466445816393113
+      },
+      "val_metrics": {
+        "loss": 0.32576726191231964,
+        "accuracy": 0.8807468379843405
+      }
+    }
+  ]
+}
