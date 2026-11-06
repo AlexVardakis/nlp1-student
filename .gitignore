@@ -1,2 +1,11 @@
 __pycache__/
-part1/results/
+
+# Ignore the tutorial's AG News runs and the Qwen embedding cache, but share the sentiment
+# project's small artefacts (tokenizer, split indices, tuning table) so teammates don't retrain.
+part1/results/*
+!part1/results/sentiment/
+
+# ...but not trained model files or other large binaries that may land in results/sentiment/.
+part1/results/sentiment/**/*.pickle
+part1/results/sentiment/**/*.pt
+part1/results/sentiment/**/*.npz
