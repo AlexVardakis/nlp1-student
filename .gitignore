@@ -10,4 +10,20 @@ part1/results/sentiment/**/*.pickle
 part1/results/sentiment/**/*.pt
 part1/results/sentiment/**/*.npz
 
+# Part 2: Ignore downloaded pretrained embedding archives and tutorial outputs,
+# but share small JSON experiment artefacts in part2/results/sentiment/ so teammates don't retrain.
+part2/*.zip
+part2/*.gz
+part2/*.vec
+part2/*.bin
+part2/results/*
+!part2/results/sentiment/
+
+# ...but not trained model weights, embedding caches, or dataset caches in part2/results/sentiment/.
+part2/results/sentiment/**/*.pickle
+part2/results/sentiment/**/*.pkl
+part2/results/sentiment/**/*.pt
+part2/results/sentiment/**/*.npz
+part2/results/sentiment/**/*.parquet
+
 .DS_Store
