@@ -1,0 +1,3 @@
+# AI use log, Project 2 (to be disclosed in the blog post)
+
+- 2026-11-19 - Claude Code (Opus 5.5) on the Pi: wrote the Task 4 LSTM code, `part2/recurrent.py` (truncation to the first 256 tokens, compact fastText table restricted to IMDB words, scale-matched random embeddings, early stopping with best-checkpoint restore, cross-validation runner on the Project 1 folds) and the Task 4 cells in `project.ipynb` (setup, runs for experiments A/B/C, results table, learning curves, Bayesian comparisons). It reuses the tutorial's `LSTMEncoder`, `SoftmaxRegressor` and training-epoch code. Alex chose the experiments (frozen vs fine-tuned vs random embeddings) and all hyperparameters. Code was checked on synthetic data only; the real runs were not started by the AI.
