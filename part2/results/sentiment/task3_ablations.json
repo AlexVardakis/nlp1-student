@@ -242,5 +242,63 @@
       "Fine-tuned GloVe-100d": 0.88,
       "Trainable Random-100d": 0.882
     }
+  ],
+  "antonym_shift": [
+    {
+      "Word Pair": "(good, bad)",
+      "Relation": "Antonym",
+      "Cosine Sim (Frozen Pretrained GloVe-100d)": 0.77,
+      "Cosine Sim (After Sentiment Fine-Tuning)": 0.398,
+      "Change (Delta)": -0.372
+    },
+    {
+      "Word Pair": "(great, terrible)",
+      "Relation": "Antonym",
+      "Cosine Sim (Frozen Pretrained GloVe-100d)": 0.565,
+      "Cosine Sim (After Sentiment Fine-Tuning)": 0.332,
+      "Change (Delta)": -0.234
+    },
+    {
+      "Word Pair": "(best, worst)",
+      "Relation": "Antonym",
+      "Cosine Sim (Frozen Pretrained GloVe-100d)": 0.528,
+      "Cosine Sim (After Sentiment Fine-Tuning)": 0.152,
+      "Change (Delta)": -0.376
+    },
+    {
+      "Word Pair": "(love, hate)",
+      "Relation": "Antonym",
+      "Cosine Sim (Frozen Pretrained GloVe-100d)": 0.57,
+      "Cosine Sim (After Sentiment Fine-Tuning)": 0.139,
+      "Change (Delta)": -0.432
+    },
+    {
+      "Word Pair": "(excellent, awful)",
+      "Relation": "Antonym",
+      "Cosine Sim (Frozen Pretrained GloVe-100d)": 0.372,
+      "Cosine Sim (After Sentiment Fine-Tuning)": -0.106,
+      "Change (Delta)": -0.479
+    },
+    {
+      "Word Pair": "(hilarious, boring)",
+      "Relation": "Antonym",
+      "Cosine Sim (Frozen Pretrained GloVe-100d)": 0.619,
+      "Cosine Sim (After Sentiment Fine-Tuning)": -0.039,
+      "Change (Delta)": -0.658
+    },
+    {
+      "Word Pair": "(excellent, great)",
+      "Relation": "Same-polarity (Pos)",
+      "Cosine Sim (Frozen Pretrained GloVe-100d)": 0.614,
+      "Cosine Sim (After Sentiment Fine-Tuning)": 0.276,
+      "Change (Delta)": -0.337
+    },
+    {
+      "Word Pair": "(terrible, awful)",
+      "Relation": "Same-polarity (Neg)",
+      "Cosine Sim (Frozen Pretrained GloVe-100d)": 0.874,
+      "Cosine Sim (After Sentiment Fine-Tuning)": -0.053,
+      "Change (Delta)": -0.928
+    }
   ]
 }
