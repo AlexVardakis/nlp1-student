@@ -1,0 +1,17 @@
+{
+  "enc_kwargs": {
+    "hidden_size": 64,
+    "word_dropout": 0.0,
+    "pooling": "meanmax",
+    "bidirectional": true,
+    "freeze_embeddings": true,
+    "padding_idx": 0
+  },
+  "regressor_kwargs": {
+    "hidden_size1": 64,
+    "hidden_size2": 64,
+    "dropout": 0.3,
+    "num_classes": 2
+  },
+  "enc_type": "lstm-meanmax"
+}
