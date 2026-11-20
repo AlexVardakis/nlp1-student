@@ -15,6 +15,14 @@ What this module adds, because a controlled A/B/C comparison needs it and experi
 - train_lstm: early stopping on validation loss with patience, then restores the best checkpoint.
 - run_cv_system: runs one system on the Project 1 cross-validation folds and saves results.json in the same
   schema as the Task 3 systems, so the Bayesian correlated t-test code in the notebook works unchanged.
+
+Task 4b additions (the A/B/C runs above are unaffected: their saved settings contain none of these options):
+- MeanMaxLSTMEncoder: summarises a review by mean + max over all LSTM hidden states, optionally bidirectional
+  (chosen with enc_kwargs {"pooling": "meanmax", "bidirectional": True/False}).
+- training_one_epoch_clipped: the tutorial's epoch loop plus gradient clipping (opt_kwargs {"clip_grad_norm": 1.0}),
+  and it records how often clipping was triggered.
+- load_model: reloads a saved fold model with either encoder.
+- run_cv_system(save_weights=False): skip writing model.pt (about 118 MB per fold) to save disk.
 """
 import json
 import time
@@ -24,6 +32,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
@@ -173,6 +182,81 @@ def _scores(logprobs: np.ndarray, labels) -> dict:
     return {"loss": loss, "accuracy": float(np.mean(preds == labels)), "predictions": preds}
 
 
+class MeanMaxLSTMEncoder(nn.Module):
+    """
+    Task 4b. An LSTM that summarises the review with ALL its hidden states instead of only the last one.
+
+    For every token the LSTM produces a hidden state h_t. We combine them in two ways and concatenate the results:
+      - mean over t: the average signal of the whole review (every part counts equally),
+      - max over t (per dimension): the strongest signal anywhere in the review (e.g. one very negative phrase).
+    Padding positions are excluded from both. With bidirectional=True a second LSTM reads the review right-to-left,
+    and h_t is the concatenation of both directions, so every position also "knows" what comes after it.
+
+    Output size (enc_dim) = hidden_size x (2 if bidirectional else 1) x 2 (mean and max).
+    Same arguments as clslib.LSTMEncoder (embedding, padding, freezing, word dropout), plus `bidirectional`.
+    """
+
+    def __init__(self, hidden_size, embedding_matrix, padding_idx=0, freeze_embeddings=True, word_dropout=0.,
+                 bidirectional=False):
+        super().__init__()
+        self.embedding = nn.Embedding.from_pretrained(embedding_matrix, freeze=freeze_embeddings, padding_idx=padding_idx)
+        self.hidden_size = hidden_size
+        self.word_dropout = word_dropout
+        self.bidirectional = bidirectional
+        self.lstm = nn.LSTM(
+            input_size=embedding_matrix.shape[1],
+            hidden_size=hidden_size,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=bidirectional,
+        )
+
+    @property
+    def enc_dim(self):
+        return self.hidden_size * (2 if self.bidirectional else 1) * 2
+
+    @property
+    def pad_idx(self):
+        return self.embedding.padding_idx
+
+    def forward(self, x):
+        # [batch, max_len, emb_dim]
+        embedded = self.embedding(x)
+        valid = x.ne(self.embedding.padding_idx)  # [batch, max_len], False on padding
+        if self.training and self.word_dropout > 0:  # same word dropout as clslib.LSTMEncoder
+            drop_mask = (torch.rand(x.shape, device=embedded.device) < self.word_dropout) & valid
+            embedded = embedded.masked_fill(drop_mask.unsqueeze(-1), 0.0)
+        lengths = valid.sum(dim=-1)
+        # Packing makes the LSTM skip padding; for the backward direction this means it starts at the real last word
+        packed = pack_padded_sequence(embedded, lengths.cpu(), batch_first=True, enforce_sorted=False)
+        packed_out, _ = self.lstm(packed)
+        # [batch, max_len, hidden_size * directions]; padding positions come back as zeros
+        states, _ = pad_packed_sequence(packed_out, batch_first=True, total_length=x.shape[1])
+        mask = valid.unsqueeze(-1)
+        mean_pool = (states * mask).sum(dim=1) / lengths.unsqueeze(-1).clamp(min=1).to(states.dtype)
+        max_pool = states.masked_fill(~mask, float("-inf")).max(dim=1).values
+        return torch.cat([mean_pool, max_pool], dim=-1)
+
+
+def make_encoder(embedding_matrix: torch.Tensor, pad_id: int, freeze_embeddings: bool, enc_kwargs: dict) -> nn.Module:
+    """
+    Pick the encoder from enc_kwargs:
+      - no "pooling" key (Task 4 A/B/C, Task 4b step 1): the tutorial's clslib.LSTMEncoder (last hidden state),
+      - pooling="meanmax" (Task 4b steps 2-4): MeanMaxLSTMEncoder, optionally bidirectional.
+    """
+    kwargs = dict(enc_kwargs)
+    pooling = kwargs.pop("pooling", "last")
+    common = dict(embedding_matrix=embedding_matrix, padding_idx=pad_id, freeze_embeddings=freeze_embeddings)
+    if pooling == "last":
+        if kwargs.get("bidirectional"):
+            raise ValueError("A bidirectional LSTM with only the last state is not one of our systems; use pooling='meanmax'")
+        kwargs.pop("bidirectional", None)
+        return clslib.LSTMEncoder(**common, **kwargs)
+    if pooling == "meanmax":
+        return MeanMaxLSTMEncoder(**common, **kwargs)
+    raise ValueError(f"Unknown pooling: {pooling}")
+
+
 def build_model(embedding_matrix: np.ndarray, freeze_embeddings: bool, pad_id: int, num_classes: int,
                 enc_kwargs: dict, regressor_kwargs: dict, init_seed: int) -> clslib.SoftmaxRegressor:
     """
@@ -182,13 +266,65 @@ def build_model(embedding_matrix: np.ndarray, freeze_embeddings: bool, pad_id: i
     (nn.Embedding.from_pretrained draws no random numbers).
     """
     torch.manual_seed(init_seed)
-    encoder = clslib.LSTMEncoder(
-        embedding_matrix=torch.tensor(np.array(embedding_matrix, dtype=np.float32, copy=True)),
-        padding_idx=pad_id,
-        freeze_embeddings=freeze_embeddings,
-        **enc_kwargs,
+    encoder = make_encoder(
+        torch.tensor(np.array(embedding_matrix, dtype=np.float32, copy=True)), pad_id, freeze_embeddings, enc_kwargs,
     )
     return clslib.SoftmaxRegressor(encoder=encoder, num_classes=num_classes, **regressor_kwargs)
+
+
+def load_model(path, emb_model: clslib.PretrainedEmbeddings, device="cpu") -> clslib.SoftmaxRegressor:
+    """
+    Reload a saved fold model ({path}.json + {path}.pt), including the Task 4b MeanMaxLSTMEncoder
+    (part2.experiment.load only knows the tutorial encoders). `emb_model` must be the table the model was trained with.
+    """
+    args = json.loads(Path(f"{path}.json").read_text(encoding="utf-8"))
+    if args.get("enc_type") not in ("lstm", "lstm-meanmax"):
+        raise ValueError(f"load_model only loads LSTM models, not enc_type={args.get('enc_type')!r} "
+                         "(use part2.experiment.load for embed-and-pool models)")
+    enc_kwargs = dict(args["enc_kwargs"])
+    pad_id = enc_kwargs.pop("padding_idx")
+    freeze = enc_kwargs.pop("freeze_embeddings")
+    encoder = make_encoder(torch.tensor(emb_model.vectors, dtype=torch.float32), pad_id, freeze, enc_kwargs)
+    model = clslib.SoftmaxRegressor(encoder=encoder, **args["regressor_kwargs"])
+    model.load_state_dict(torch.load(f"{path}.pt", map_location="cpu"))
+    return model.to(torch.device(device) if isinstance(device, str) else device)
+
+
+def training_one_epoch_clipped(model, dataloader, optimizer, criterion, device, clip_grad_norm: float) -> dict:
+    """
+    Copy of experiment.training_one_epoch with one added line: gradient clipping.
+    If the gradient of a batch has a total (L2) norm above `clip_grad_norm`, it is scaled down to that norm before
+    the update. Its direction is unchanged, so normal steps are unaffected; only the rare huge steps
+    ("exploding gradients", which made some Task 4 A runs collapse) are made smaller.
+    """
+    model.train()
+    total_loss, total_correct, total_examples = 0.0, 0, 0
+    params = [p for p in model.parameters() if p.requires_grad]
+    num_batches, num_clipped, num_nonfinite, max_norm_seen = 0, 0, 0, 0.0
+    for X_batch, y_batch in dataloader:
+        X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+        optimizer.zero_grad()
+        logprobs = model(X_batch)
+        loss = criterion(logprobs, y_batch)
+        loss.backward()
+        norm_before = float(torch.nn.utils.clip_grad_norm_(params, max_norm=clip_grad_norm))
+        num_batches += 1
+        if np.isfinite(norm_before):
+            num_clipped += int(norm_before > clip_grad_norm)
+            max_norm_seen = max(max_norm_seen, norm_before)
+        else:  # NaN/inf gradient: count it separately so the statistics don't hide it
+            num_nonfinite += 1
+        optimizer.step()
+        total_loss += loss.item() * y_batch.size(0)
+        total_correct += (logprobs.argmax(dim=1) == y_batch).sum().item()
+        total_examples += y_batch.size(0)
+    return {
+        "loss": total_loss / total_examples,
+        "accuracy": total_correct / total_examples,
+        "frac_batches_clipped": num_clipped / num_batches,  # how often clipping actually changed the update
+        "max_grad_norm": max_norm_seen,                      # largest finite gradient norm this epoch (before clipping)
+        "num_nonfinite_grad_batches": num_nonfinite,         # batches whose gradient norm was NaN/inf (should be 0)
+    }
 
 
 def train_lstm(model, train_ids, train_labels, es_ids, es_labels, pad_id, opt_kwargs, shuffle_seed, device, log=print):
@@ -212,7 +348,13 @@ def train_lstm(model, train_ids, train_labels, es_ids, es_labels, pad_id, opt_kw
     history = []
     for epoch in range(1, opt_kwargs["max_epochs"] + 1):
         t0 = time.time()
-        train_metrics = experiment.training_one_epoch(model, train_loader, optimizer, criterion, device)
+        if opt_kwargs.get("clip_grad_norm") is not None and opt_kwargs["clip_grad_norm"] <= 0:
+            raise ValueError("clip_grad_norm must be positive (or None for no clipping)")
+        if opt_kwargs.get("clip_grad_norm"):  # Task 4b; the Task 4 A/B/C runs have no clipping
+            train_metrics = training_one_epoch_clipped(model, train_loader, optimizer, criterion, device,
+                                                       opt_kwargs["clip_grad_norm"])
+        else:
+            train_metrics = experiment.training_one_epoch(model, train_loader, optimizer, criterion, device)
         es = _scores(predict_logprobs_ids(model, es_ids, opt_kwargs["batch_size"], pad_id, device), es_labels)
         improved = es["loss"] < best_loss - opt_kwargs.get("min_delta", 0.0)
         if improved:
@@ -229,6 +371,8 @@ def train_lstm(model, train_ids, train_labels, es_ids, es_labels, pad_id, opt_kw
             "es_accuracy": es["accuracy"],
             "improved": improved,
             "seconds": time.time() - t0,
+            # Task 4b only (clipping statistics); empty for the Task 4 A/B/C runs
+            **{k: v for k, v in train_metrics.items() if k not in ("loss", "accuracy")},
         })
         log(f"  epoch {epoch:02d} | train loss {train_metrics['loss']:.4f} acc {train_metrics['accuracy']:.4f} | "
             f"early-stop loss {es['loss']:.4f} acc {es['accuracy']:.4f}{' *' if improved else ''} | "
@@ -271,6 +415,7 @@ def run_cv_system(
     num_classes: int = 2,
     device=None,
     folds=None,
+    save_weights: bool = True,
     log=print,
 ) -> list:
     """
@@ -282,8 +427,9 @@ def run_cv_system(
     tokenizer: the tokenizer (already truncated) whose vocabulary is emb_model.vocab
     embedding_init: 'pretrained' (emb_model.vectors) or 'random' (random_embedding_matrix, same shape and scale)
     folds: optionally a subset of fold ids (e.g. [0] for a timing check); results.json is only written for full runs
+    save_weights: write model.pt per fold (False skips it to save disk; predictions and probabilities are still saved)
 
-    Saves per fold: model.json + model.pt (reload with part2.experiment.load(path, emb_model)) and fold_results.json.
+    Saves per fold: model.json + model.pt (reload with load_model(path, emb_model)) and fold_results.json.
     Saves per seed: results.json with the same keys as the Task 3 systems plus training curves and probabilities.
     Finished folds and seeds are loaded, not retrained, so an interrupted run resumes where it stopped.
     Returns the per-seed result dicts.
@@ -302,7 +448,8 @@ def run_cv_system(
 
     config = {
         "system": name,
-        "enc_type": "lstm",
+        # "lstm" = tutorial LSTMEncoder (last state); "lstm-meanmax" = Task 4b MeanMaxLSTMEncoder
+        "enc_type": "lstm-meanmax" if enc_kwargs.get("pooling", "last") == "meanmax" else "lstm",
         "embedding_init": embedding_init,
         "max_tokens": max_tokens,
         "vocab_size": len(emb_model.vocab),
@@ -380,7 +527,8 @@ def run_cv_system(
             model_path = fold_folder / "model"
             with open(f"{model_path}.json", "w", encoding="utf-8") as f:
                 json.dump({k: config[k] for k in ("enc_kwargs", "regressor_kwargs", "enc_type")}, f, indent=2)
-            torch.save({k: v.detach().cpu() for k, v in model.state_dict().items()}, f"{model_path}.pt")
+            if save_weights:
+                torch.save({k: v.detach().cpu() for k, v in model.state_dict().items()}, f"{model_path}.pt")
 
             per_fold[fold] = {
                 "model": str(model_path),

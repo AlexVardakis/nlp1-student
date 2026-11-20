@@ -1,0 +1,29 @@
+{
+  "system": "lstm_ft300_finetuned",
+  "enc_type": "lstm",
+  "embedding_init": "pretrained",
+  "max_tokens": 256,
+  "vocab_size": 97827,
+  "emb_dim": 300,
+  "enc_kwargs": {
+    "hidden_size": 64,
+    "word_dropout": 0.0,
+    "freeze_embeddings": false,
+    "padding_idx": 0
+  },
+  "regressor_kwargs": {
+    "hidden_size1": 64,
+    "hidden_size2": 64,
+    "dropout": 0.3,
+    "num_classes": 2
+  },
+  "opt_kwargs": {
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 32,
+    "max_epochs": 8,
+    "patience": 2,
+    "min_delta": 0.0
+  },
+  "early_stopping_set": "2000 fixed validation reviews (not the scored fold)"
+}
