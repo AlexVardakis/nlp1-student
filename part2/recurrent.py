@@ -23,6 +23,10 @@ Task 4b additions (the A/B/C runs above are unaffected: their saved settings con
   and it records how often clipping was triggered.
 - load_model: reloads a saved fold model with either encoder.
 - run_cv_system(save_weights=False): skip writing model.pt (about 118 MB per fold) to save disk.
+
+Task 4c additions (training-set size; reuse run_cv_system unchanged):
+- nested_subsets / subset_fold: growing, nested subsets of one fold's training part, scored on that fold.
+- scaled_opt_kwargs: more epochs (and patience) for smaller subsets, so each size gets about as many updates.
 """
 import json
 import time
@@ -573,3 +577,50 @@ def run_cv_system(
         results_file.write_text(json.dumps(result), encoding="utf-8")
         runs.append(json.loads(results_file.read_text(encoding="utf-8")))
     return runs
+
+
+# ---------------------------------------------------------------------------
+# Task 4c: training-set size (one CV fold, growing subsets of its training part)
+# ---------------------------------------------------------------------------
+
+DATA_SIZE_FRACTIONS = (0.02, 0.05, 0.10, 0.25, 0.50, 1.00)  # the same fractions as the Task 3.2 pool ablation
+
+
+def nested_subsets(n: int, fractions, seed: int) -> dict:
+    """
+    fraction -> indices into range(n) of the training reviews to keep.
+    The subsets are nested (every smaller subset is part of every larger one), so along the curve only the amount
+    of data changes, not which reviews are in it. Indices are sorted, so the reviews keep their original order:
+    at fraction 1.0 the training list (and therefore the batch order) is exactly the one of the full fold.
+    """
+    order = np.random.default_rng(seed).permutation(n)
+    return OrderedDict((f, np.sort(order[: max(1, int(round(f * n)))])) for f in fractions)
+
+
+def subset_fold(cv_sets: dict, fold: int, idx) -> dict:
+    """
+    A one-fold split in the format of part1.experiment.cross_validation_split, for run_cv_system:
+    training = only the reviews `idx` of this fold's training part; validation (the scored reviews) is unchanged.
+    The fold keeps its original number, so run_cv_system gives it the same init and shuffling seed as the CV runs.
+    """
+    original = cv_sets[fold]
+    return {fold: {
+        "training": [original["training"][i] for i in idx],
+        "validation": original["validation"],
+        "training_ids": [original["training_ids"][i] for i in idx],
+        "validation_ids": original["validation_ids"],
+    }}
+
+
+def scaled_opt_kwargs(base: dict, fraction: float, max_epochs_cap: int = 40, patience_cap: int = 8) -> dict:
+    """
+    A smaller training set has fewer batches per epoch, so 8 epochs on 2% of the data would be only ~130 updates.
+    To give every size about as many updates as the full run, max_epochs and patience are divided by `fraction`
+    (rounded up), with caps to bound the cost. At fraction 1.0 this returns the base settings unchanged.
+    """
+    if not 0 < fraction <= 1:
+        raise ValueError(f"fraction must be in (0, 1], got {fraction}")
+    out = dict(base)
+    out["max_epochs"] = max(base["max_epochs"], min(max_epochs_cap, int(np.ceil(round(base["max_epochs"] / fraction, 6)))))
+    out["patience"] = max(base["patience"], min(patience_cap, int(np.ceil(round(base["patience"] / fraction, 6)))))
+    return out
