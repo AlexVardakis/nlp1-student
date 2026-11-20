@@ -25,7 +25,7 @@ Task 4b additions (the A/B/C runs above are unaffected: their saved settings con
 - run_cv_system(save_weights=False): skip writing model.pt (about 118 MB per fold) to save disk.
 
 Task 4c additions (training-set size; reuse run_cv_system unchanged):
-- nested_subsets / subset_fold: growing, nested subsets of one fold's training part, scored on that fold.
+- nested_subsets / subset_split: growing, nested subsets of the training set, scored on a fixed set of reviews.
 - scaled_opt_kwargs: more epochs (and patience) for smaller subsets, so each size gets about as many updates.
 """
 import json
@@ -580,7 +580,7 @@ def run_cv_system(
 
 
 # ---------------------------------------------------------------------------
-# Task 4c: training-set size (one CV fold, growing subsets of its training part)
+# Task 4c: training-set size (growing subsets of the training set, as in the Task 3.2 pool ablation)
 # ---------------------------------------------------------------------------
 
 DATA_SIZE_FRACTIONS = (0.02, 0.05, 0.10, 0.25, 0.50, 1.00)  # the same fractions as the Task 3.2 pool ablation
@@ -590,25 +590,24 @@ def nested_subsets(n: int, fractions, seed: int) -> dict:
     """
     fraction -> indices into range(n) of the training reviews to keep.
     The subsets are nested (every smaller subset is part of every larger one), so along the curve only the amount
-    of data changes, not which reviews are in it. Indices are sorted, so the reviews keep their original order:
-    at fraction 1.0 the training list (and therefore the batch order) is exactly the one of the full fold.
+    of data changes, not which reviews are in it. Indices are sorted, so the reviews keep their original order.
+    Subset sizes are round(fraction * n), as in Task 3.2 (n = 24,904 gives 498, 1,245, 2,490, 6,226, 12,452, 24,904).
     """
     order = np.random.default_rng(seed).permutation(n)
     return OrderedDict((f, np.sort(order[: max(1, int(round(f * n)))])) for f in fractions)
 
 
-def subset_fold(cv_sets: dict, fold: int, idx) -> dict:
+def subset_split(train_pairs: list, idx, eval_pairs: list, fold: int = 0) -> dict:
     """
     A one-fold split in the format of part1.experiment.cross_validation_split, for run_cv_system:
-    training = only the reviews `idx` of this fold's training part; validation (the scored reviews) is unchanged.
-    The fold keeps its original number, so run_cv_system gives it the same init and shuffling seed as the CV runs.
+    training = the reviews `idx` of `train_pairs` (in their original order); validation = `eval_pairs` (the scored reviews).
+    validation_ids are positions in `eval_pairs`.
     """
-    original = cv_sets[fold]
     return {fold: {
-        "training": [original["training"][i] for i in idx],
-        "validation": original["validation"],
-        "training_ids": [original["training_ids"][i] for i in idx],
-        "validation_ids": original["validation_ids"],
+        "training": [train_pairs[i] for i in idx],
+        "validation": list(eval_pairs),
+        "training_ids": [int(i) for i in idx],
+        "validation_ids": list(range(len(eval_pairs))),
     }}
 
 
